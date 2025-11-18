@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  aici:
+    build: .
+    image: aici-challenge
+    container_name: aici-challenge
+    working_dir: /ws
+    volumes:
+      - ./data:/ws/data
+      - ./results:/ws/results
+    command: >
+      bash -lc "
+      echo '=== OFFICE: Extracting samples ===' &&
+      python3 -m aici.extract_office_samples &&
+      echo '=== OFFICE: YOLO detections ===' &&
+      python3 -m aici.detection &&
+      echo '=== OFFICE: Fit footprints ===' &&
+      python3 -m aici.office_fit_boxes &&
+      echo '=== OFFICE: Draw map ===' &&
+      python3 -m aici.office_draw_map_from_cam &&
+
+      echo '=== BATHROOM: Extracting samples ===' &&
+      python3 -m aici.extract_bathroom_samples &&
+      echo '=== BATHROOM: YOLO detections ===' &&
+      python3 -m aici.bathroom_detection &&
+      echo '=== BATHROOM: Fit footprints ===' &&
+      python3 -m aici.bathroom_fit_boxes &&
+      echo '=== BATHROOM: Draw map ===' &&
+      python3 -m aici.bathroom_draw_map_from_cam &&
+
+      echo '=== Pipeline completed successfully ==='
+      "
+
