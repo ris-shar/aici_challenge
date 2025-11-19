@@ -1,0 +1,15 @@
+services:
+  aici-challenge-ch2:
+    build: .
+    container_name: aici-challenge-ch2
+    working_dir: /ws
+    volumes:
+      - .:/ws
+    command: >
+      bash -c "
+      export PYTHONPATH=/ws/src:$PYTHONPATH &&
+      python3 -m aici.extract_office_samples &&
+      python3 -m aici.colorize_concat_office_world &&
+      python3 -m aici.extract_bathroom_samples &&
+      python3 -m aici.colorize_concat_bathroom_world
+      "
