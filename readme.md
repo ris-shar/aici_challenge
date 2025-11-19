@@ -189,10 +189,10 @@ results/
 
 | Dependency                            | Version    |
 | ------------------------------------- | ---------- |
-| Python                                | 3.10       |
+| Python                                | 3.10.12       |
 | ROS 2                                 | Humble     |
 | ultralytics                           | ≥ 8.3      |
-| OpenCV                                | 4.x        |
+| OpenCV                                | 4.11.0        |
 | NumPy                                 | ≥ 1.23     |
 | TFMessage, rosbag2_py, sensor_msgs_py | ROS Humble |
 
