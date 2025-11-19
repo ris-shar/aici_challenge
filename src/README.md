@@ -1,1 +1,0 @@
-# aici_challenge
