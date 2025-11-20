@@ -13,7 +13,7 @@ VALID_CLASSES = {
     "table": "table",
     "toilet": "wc",
     "bathtub": "bathtub",
-    "sink": "sink",  # optional, but nice to keep
+    "sink": "sink",  
 }
 
 

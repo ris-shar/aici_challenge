@@ -1,184 +1,142 @@
 from pathlib import Path
 import json
+from typing import List, Dict
 
 import cv2
 import numpy as np
-import yaml
+
+from aici.maps import OccupancyMap
 
 
-def load_map(root: Path):
-    """Load occupancy grid (PGM) and YAML meta (resolution, origin)."""
-    yaml_path = root / "data" / "office" / "room.yaml"
-    pgm_path = root / "data" / "office" / "room.pgm"
-
-    with open(yaml_path, "r") as f:
-        cfg = yaml.safe_load(f)
-
-    resolution = float(cfg["resolution"])          # m / pixel
-    origin = cfg["origin"]                         # [x, y, yaw]
-    origin_x, origin_y = float(origin[0]), float(origin[1])
-
-    img_gray = cv2.imread(str(pgm_path), cv2.IMREAD_GRAYSCALE)
-    if img_gray is None:
-        raise FileNotFoundError(f"Could not read map image: {pgm_path}")
-
-    img_color = cv2.cvtColor(img_gray, cv2.COLOR_GRAY2BGR)
-    H, W = img_color.shape[:2]
-    print(f"Loaded map {pgm_path} with size (HxW)=({H},{W}), "
-          f"resolution={resolution}, origin=({origin_x},{origin_y})")
-
-    return img_color, resolution, origin_x, origin_y
+# Simple color palette for classes
+CLASS_COLORS = {
+    "chair": (0, 0, 255),   # red
+    "couch": (0, 255, 0),   # green
+    "table": (0, 255, 255), # yellow
+}
 
 
-def world_to_map(x: float, y: float,
-                 resolution: float,
-                 origin_x: float,
-                 origin_y: float,
-                 img_shape):
+def draw_objects_with_ids_and_legend(
+    occ: OccupancyMap,
+    objects: List[Dict],
+) -> np.ndarray:
     """
-    Convert world coordinates (meters) to pixel coordinates in the PGM.
-
-    Standard ROS nav convention:
-      - origin (origin_x, origin_y) in meters corresponds to pixel (0, height-1)
-      - x increases to the right, y increases up (in meters)
-      - image (0,0) is top-left, row index downward
-
-    So:
-      mx = (x - origin_x) / res
-      my = height - (y - origin_y) / res
+    Draw oriented boxes for each object, with:
+      * an ID number near the top-left of the box
+      * a legend text in the bottom-left corner of the map
     """
-    H, W = img_shape[:2]
 
-    mx = int((x - origin_x) / resolution)
-    my = int(H - (y - origin_y) / resolution)
+    # Start from grayscale map and convert to BGR
+    color_map = cv2.cvtColor(occ.map_img, cv2.COLOR_GRAY2BGR)
 
-    return mx, my
+    legend_lines = []
 
+    for obj_id, obj in enumerate(objects, start=1):
+        cls = obj.get("class", "obj")
+        fp = obj["footprint_cam"]
 
-def draw_oriented_box(img,
-                      center_x: float,
-                      center_y: float,
-                      length: float,
-                      width: float,
-                      yaw: float,
-                      resolution: float,
-                      origin_x: float,
-                      origin_y: float,
-                      color=(0, 0, 255),
-                      thickness=2):
-    """
-    Draw an oriented rectangle in *world* coordinates onto the map image.
+        x_map = fp["center_x"]      # we approximate camera frame == map frame
+        y_map = fp["center_z"]
+        yaw = fp["yaw"]
+        length = float(fp["length"])
+        width = float(fp["width"])
 
-    center_x, center_y: in meters (map/world frame)
-    length, width: in meters
-    yaw: orientation in radians in the XY plane
-    """
-    # Half extents
-    hl = length / 2.0
-    hw = width / 2.0
+        # Avoid degenerate tiny widths
+        width = max(width, 0.20)
 
-    # Direction vectors in world coordinates
-    # Axis along the length
-    dx = hl * np.cos(yaw)
-    dy = hl * np.sin(yaw)
+        # Convert world (meters) -> pixel coordinates
+        cx_px, cy_px = occ.world_to_pixel(x_map, y_map)
+        cx_px = float(cx_px)
+        cy_px = float(cy_px)
 
-    # Axis along the width (perpendicular to length)
-    wx = -hw * np.sin(yaw)
-    wy = hw * np.cos(yaw)
+        # Size in pixels
+        half_len_px = (length / occ.resolution) / 2.0
+        half_wid_px = (width / occ.resolution) / 2.0
 
-    # Four corners in world frame
-    corners_world = np.array([
-        [center_x + dx + wx, center_y + dy + wy],
-        [center_x + dx - wx, center_y + dy - wy],
-        [center_x - dx - wx, center_y - dy - wy],
-        [center_x - dx + wx, center_y - dy + wy],
-    ], dtype=np.float32)
-
-    # Convert to pixel coords
-    pts_img = []
-    for (xw, yw) in corners_world:
-        mx, my = world_to_map(
-            xw, yw,
-            resolution, origin_x, origin_y,
-            img.shape
+        # OpenCV rotated rectangle uses degrees, image y-axis downward
+        rect = (
+            (cx_px, cy_px),
+            (2.0 * half_len_px, 2.0 * half_wid_px),
+            -np.degrees(yaw),
         )
-        pts_img.append([mx, my])
 
-    pts_img = np.array(pts_img, dtype=np.int32).reshape((-1, 1, 2))
+        box = cv2.boxPoints(rect).astype(int)
 
-    cv2.polylines(img, [pts_img], isClosed=True, color=color, thickness=thickness)
+        color = CLASS_COLORS.get(cls, (255, 255, 255))
 
-    # Draw center as a small dot
-    cx_pix, cy_pix = world_to_map(
-        center_x, center_y,
-        resolution, origin_x, origin_y,
-        img.shape
-    )
-    cv2.circle(img, (cx_pix, cy_pix), 3, color, -1)
+        # Draw oriented box and center
+        cv2.polylines(color_map, [box], isClosed=True, color=color, thickness=2)
+        cv2.circle(color_map, (int(cx_px), int(cy_px)), 3, (0, 0, 0), -1)
+
+        # Choose a "top-left" corner in image coords (smallest x+y)
+        tl_idx = np.argmin(box.sum(axis=1))
+        tl = box[tl_idx]
+        tl_x, tl_y = int(tl[0]), int(tl[1])
+
+        # Draw ID number near that corner
+        cv2.putText(
+            color_map,
+            f"{obj_id}",
+            (tl_x, tl_y - 4),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            1,
+            cv2.LINE_AA,
+        )
+
+        legend_lines.append(f"{obj_id}: {cls}")
+
+    # Draw legend in bottom-left corner
+    if legend_lines:
+        # Start a bit above bottom, so all lines fit
+        height, width = color_map.shape[:2]
+        line_height = 15
+        total_height = line_height * len(legend_lines)
+        y0 = max(20, height - total_height - 10)
+        x0 = 10
+
+        for i, line in enumerate(legend_lines):
+            y = y0 + i * line_height
+            cv2.putText(
+                color_map,
+                line,
+                (x0, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 0, 0),
+                1,
+                cv2.LINE_AA,
+            )
+
+    return color_map
 
 
 def main():
     ROOT = Path(__file__).resolve().parents[2]
 
-    # 1. Load map
-    map_img, resolution, origin_x, origin_y = load_map(ROOT)
+    map_pgm = ROOT / "data" / "office" / "room.pgm"
+    map_yaml = ROOT / "data" / "office" / "room.yaml"
+    footprints_json = ROOT / "results" / "office_object_footprints_cam.json"
 
-    # 2. Load object footprints
-    footprints_path = ROOT / "results" / "office_object_footprints_cam.json"
-    with open(footprints_path, "r") as f:
-        objs = json.load(f)
-
-    print(f"Loaded {len(objs)} objects from {footprints_path}")
-
-    # 3. Draw each object
-    for obj in objs:
-        # Support both flat format and old nested "footprint_cam" format
-        if "footprint_cam" in obj:
-            fp = obj["footprint_cam"]
-        else:
-            fp = obj
-
-        cls_name = obj.get("class", "object")
-
-        cx = float(fp["center_x"])
-        cy = float(fp["center_z"])   # we stored Z as forward distance; use as Y in map
-        yaw = float(fp["yaw"])
-        length = float(fp["length"])
-        width = float(fp["width"])
-
-        print(f"Drawing {cls_name}: "
-              f"map_x={cx:.2f}, map_y={cy:.2f}, yaw={yaw:.2f}, "
-              f"L={length:.2f}, W={width:.2f}")
-
-        # Choose color by class
-        if "couch" in cls_name.lower():
-            color = (0, 255, 255)   # yellow-ish
-        elif "chair" in cls_name.lower():
-            color = (0, 0, 255)     # red
-        elif "table" in cls_name.lower():
-            color = (0, 255, 0)     # green
-        else:
-            color = (255, 0, 0)     # blue
-
-        draw_oriented_box(
-            map_img,
-            center_x=cx,
-            center_y=cy,
-            length=length,
-            width=width,
-            yaw=yaw,
-            resolution=resolution,
-            origin_x=origin_x,
-            origin_y=origin_y,
-            color=color,
-            thickness=2,
+    if not footprints_json.exists():
+        raise FileNotFoundError(
+            f"Footprints file not found: {footprints_json} "
+            "(run `python3 -m aici.office_fit_boxes` first)."
         )
 
-    # 4. Save result
-    out_path = ROOT / "results" / "office_map_detections.png"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(out_path), map_img)
-    print("Saved map detections overlay to", out_path)
+    with open(footprints_json, "r") as f:
+        objects = json.load(f)
+
+    print(f"Loaded {len(objects)} office objects from {footprints_json}")
+
+    occ = OccupancyMap(str(map_pgm), str(map_yaml))
+
+    color_map = draw_objects_with_ids_and_legend(occ, objects)
+
+    out_png = ROOT / "results" / "office_map_detections.png"
+    cv2.imwrite(str(out_png), color_map)
+    print(f"Saved office map detections overlay to {out_png}")
 
 
 if __name__ == "__main__":
