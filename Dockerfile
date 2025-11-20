@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
     ros-humble-tf2-msgs \
     && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies (pin ultralytics to your version)
+# Python dependencies 
 RUN pip3 install --no-cache-dir \
     "ultralytics==8.3.134" \
     numpy \
