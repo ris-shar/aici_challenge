@@ -1,5 +1,4 @@
 from pathlib import Path
-import random
 
 import numpy as np
 import cv2
@@ -16,9 +15,11 @@ from .tf_utils import load_tf_graph_from_bag
 def pointcloud2_to_xyz_array(msg: PointCloud2) -> np.ndarray:
     """Convert PointCloud2 to (N, 3) xyz array."""
     points = []
-    for p in point_cloud2.read_points(msg,
-                                      field_names=("x", "y", "z"),
-                                      skip_nans=True):
+    for p in point_cloud2.read_points(
+        msg,
+        field_names=("x", "y", "z"),
+        skip_nans=True,
+    ):
         points.append([p[0], p[1], p[2]])
     if not points:
         return np.zeros((0, 3), dtype=np.float32)
@@ -40,9 +41,15 @@ def main():
     out_cloud_path = ROOT / "data" / "office" / "office_cloud_sample.npy"
     out_K_path = ROOT / "data" / "office" / "office_cam_K.npy"
 
-    # ------------------------------------------------------------------
+    
+    # 0) Choose which synchronized sample to use
+  
+    # Valid range (for current office bag): 0 .. 3583
+    TARGET_SAMPLE_INDEX = 2034
+
+   
     # 1) Build TF graph and get LiDAR -> camera transform
-    # ------------------------------------------------------------------
+   
     tf_graph = load_tf_graph_from_bag(bag_dir)
     LIDAR_FRAME = "livox_frame"
     CAM_FRAME = "zed_left_camera_optical_frame"
@@ -58,10 +65,9 @@ def main():
 
     print("T_cam_lidar =\n", T_cam_lidar)
 
-    # ------------------------------------------------------------------
-    # 2) Read the rosbag, collect sample triples (rgb, lidar, cam_info)
-    #    We pair each RGB frame with the most recent LiDAR and CameraInfo.
-    # ------------------------------------------------------------------
+    
+    # 2) Read rosbag and collect synchronized (rgb, lidar, cam_info) samples
+
     storage_options = rosbag2_py.StorageOptions(
         uri=str(bag_dir),
         storage_id="sqlite3",
@@ -116,16 +122,16 @@ def main():
 
     print(f"Collected {len(samples)} synchronized samples.")
 
-    # ------------------------------------------------------------------
-    # 3) Select a random sample
-    # ------------------------------------------------------------------
-    random_idx = random.randrange(len(samples))
-    stamp, rgb_msg, lidar_msg, caminfo_msg = samples[random_idx]
-    print(f"Selected sample index {random_idx} (timestamp={stamp}).")
+ 
+    # 3) Select sample by index (clamped to valid range)
 
-    # ------------------------------------------------------------------
-    # 4) Convert messages to numpy: RGB image, camera matrix K, cloud_cam
-    # ------------------------------------------------------------------
+    idx = max(0, min(TARGET_SAMPLE_INDEX, len(samples) - 1))
+    stamp, rgb_msg, lidar_msg, caminfo_msg = samples[idx]
+    print(f"Using sample index {idx} (timestamp={stamp}).")
+
+  
+    # 4) Convert to numpy: RGB image, camera matrix K, cloud_cam
+   
     rgb_img = decode_compressed_image(rgb_msg)
     if rgb_img is None:
         raise RuntimeError("Decoded RGB image is None")
@@ -139,16 +145,14 @@ def main():
 
     # Transform cloud to camera frame using T_cam_lidar
     N = cloud_lidar.shape[0]
-    pts_lidar_h = np.hstack([cloud_lidar,
-                             np.ones((N, 1), dtype=np.float32)])  # (N, 4)
+    pts_lidar_h = np.hstack([cloud_lidar, np.ones((N, 1), dtype=np.float32)])  # (N, 4)
     pts_cam_h = (T_cam_lidar @ pts_lidar_h.T).T
     cloud_cam = pts_cam_h[:, :3]
 
     print("Cloud in camera frame:", cloud_cam.shape)
 
-    # ------------------------------------------------------------------
     # 5) Save outputs
-    # ------------------------------------------------------------------
+
     out_img_path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out_img_path), rgb_img)
     np.save(out_cloud_path, cloud_cam)
