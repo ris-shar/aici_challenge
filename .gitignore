@@ -26,7 +26,6 @@ data/**/*_cam_K.npy
 ##################################
 # Results (auto generated)
 ##################################
-results/
 ch2_world_clouds
 ##################################
 # Editors
