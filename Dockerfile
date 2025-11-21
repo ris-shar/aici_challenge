@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     ros-humble-ros2bag \
     ros-humble-sensor-msgs \
     ros-humble-tf2-msgs \
+    ros-humble-tf2-ros \
     && rm -rf /var/lib/apt/lists/*
 
 # Python dependencies 
@@ -30,6 +31,6 @@ COPY . /ws
 # Make sure Python can see your src/ folder as a package root
 ENV PYTHONPATH=/ws/src:${PYTHONPATH}
 
-# By default, drop into a shell with ROS environment already sourced
-# ros:humble-ros-base image already has /ros_entrypoint.sh as ENTRYPOINT
+# Default: shell inside container
 CMD ["bash"]
+
