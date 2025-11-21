@@ -201,13 +201,13 @@ These represent a colored 3D map of the full walk-around trajectory.
 
 # Running With Docker
 
-## Challenge 1
+## Challenge 1 and 2
 
 ```bash
 docker compose -f docker-compose-ch1.yml up
 ```
 (If the image index has to be changed it can be done fin the extract_bathroom_samples.py and extract_office_samples.py)
-This automatically executes all Challenge 1 steps and writes output to:
+This automatically executes all Challenge 1 adn 2 steps and writes output to:
 
 ```
 results/
@@ -215,17 +215,11 @@ results/
 
 ---
 
-## Challenge 2
-
-```bash
-docker compose -f docker-compose-ch2.yml up
 ```
-
-This performs world-frame mapping and writes to:
+For now docker_compose_ch1.yml act as a unified compose file for challenge 1 and 2 but current working on challenge 3 will ensure different compose files for each tasks as well.
 
 ```
-results/*.ply
-```
+
 
 Place rosbags as:
 
