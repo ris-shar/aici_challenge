@@ -28,7 +28,9 @@ services:
       python3 -m aici.bathroom_fit_boxes &&
       echo '=== BATHROOM: Draw map ===' &&
       python3 -m aici.bathroom_draw_map_from_cam &&
-
+      echo '=== Challenge 2 concatination begins ===' &&
+      python3 -m aici.colorize_concat_office_world &&
+      python3 -m aici.colorize_concat_bathroom_world
       echo '=== Pipeline completed successfully ==='
       "
 
